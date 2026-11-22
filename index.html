@@ -73,6 +73,53 @@ html[data-design="aurora"] .bar{background:rgba(255,255,255,.15)}
 html[data-design="aurora"] .bar i{background:linear-gradient(90deg,#7c3aed,#06b6d4)}
 html[data-design="aurora"] li.done .bar i{background:linear-gradient(90deg,#34d399,#67e8f9)}
 
+/* ---------- 3D ---------- */
+.scene{perspective:650px;height:150px;display:flex;justify-content:center;align-items:center;position:relative;margin:0 0 4px}
+.scene::after{content:"";position:absolute;bottom:6px;width:110px;height:18px;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.45),transparent);filter:blur(4px)}
+.cube{width:86px;height:86px;position:relative;transform-style:preserve-3d;animation:spin 16s linear infinite}
+.cube div{position:absolute;inset:0;display:grid;place-items:center;font-size:38px;border-radius:18px;
+  background:linear-gradient(135deg,rgba(124,58,237,.6),rgba(6,182,212,.5));border:1px solid rgba(255,255,255,.4);
+  box-shadow:inset 0 0 28px rgba(255,255,255,.18),0 0 24px rgba(124,58,237,.35)}
+.cube .f1{transform:translateZ(43px)}
+.cube .f2{transform:rotateY(90deg) translateZ(43px)}
+.cube .f3{transform:rotateY(180deg) translateZ(43px)}
+.cube .f4{transform:rotateY(-90deg) translateZ(43px)}
+.cube .f5{transform:rotateX(90deg) translateZ(43px)}
+.cube .f6{transform:rotateX(-90deg) translateZ(43px)}
+@keyframes spin{from{transform:rotateX(-22deg) rotateY(0)}to{transform:rotateX(-22deg) rotateY(360deg)}}
+
+#targets{perspective:1000px}
+.t small{display:block}
+html[data-design="aurora"] button.t{
+  transform-style:preserve-3d;
+  transform:perspective(700px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(var(--tz,0px));
+  transition:transform .12s ease-out,box-shadow .2s,border-color .2s,background .2s;
+  backdrop-filter:none;-webkit-backdrop-filter:none;will-change:transform;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 6px 0 rgba(8,6,32,.55),0 16px 24px rgba(0,0,0,.35)}
+html[data-design="aurora"] button.t .i,html[data-design="aurora"] button.t b{transform:translateZ(24px)}
+html[data-design="aurora"] button.t small{transform:translateZ(10px)}
+html[data-design="aurora"] button.t:hover{--tz:12px}
+html[data-design="aurora"] button.t.on{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.38),0 0 0 1px #67e8f9,0 6px 0 rgba(8,70,100,.75),0 16px 28px rgba(6,182,212,.4)}
+html[data-design="aurora"] button.t:active{--tz:-6px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 1px 0 rgba(8,6,32,.55),0 6px 10px rgba(0,0,0,.35)}
+
+html[data-design="aurora"] #drop{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .12s ease-out,border-color .2s,background .2s}
+html[data-design="aurora"] #drop:hover,html[data-design="aurora"] #drop.over{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(14px)}
+html[data-design="aurora"] .ico{display:inline-block;animation:bob 3.2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0) rotateY(0)}50%{transform:translateY(-8px) rotateY(18deg)}}
+
+li{animation:flipin .5s cubic-bezier(.2,.8,.2,1) both;transform-origin:50% 0}
+@keyframes flipin{from{opacity:0;transform:perspective(700px) rotateX(-55deg) translateY(18px)}to{opacity:1;transform:perspective(700px) rotateX(0) translateY(0)}}
+
+html[data-design="aurora"] body::before{transform:translate(calc(var(--px,0)*-50px),calc(var(--py,0)*-50px))}
+html[data-design="aurora"] body::after{transform:translate(calc(var(--px,0)*60px),calc(var(--py,0)*60px))}
+
+@media (prefers-reduced-motion:reduce){
+  .cube,html[data-design="aurora"] .ico,li{animation:none}
+  html[data-design="aurora"] button.t,html[data-design="aurora"] #drop{transition:none}
+}
+
 /* design switch */
 .switch{display:flex;gap:6px;margin-bottom:20px}
 .switch button{background:transparent;color:var(--mute);border:1px solid var(--line);padding:6px 14px;font-size:14px;box-shadow:none;border-radius:999px}
@@ -86,6 +133,9 @@ html[data-design="aurora"] .switch button.on{background:linear-gradient(135deg,#
   <div class="switch" id="designs">
     <button data-d="aurora" title="Refresh page">↻ Refresh</button>
   </div>
+  <div class="scene" aria-hidden="true"><div class="cube">
+    <div class="f1">📕</div><div class="f2">📝</div><div class="f3">📊</div><div class="f4">📽️</div><div class="f5">🖼️</div><div class="f6">📄</div>
+  </div></div>
   <h1>CONVERTER</h1>
   <p class="sub">PDF, Word, Excel, PowerPoint, Text, HTML, CSV and images, convert between them, merge and split PDFs. Everything runs in your browser, your files are never uploaded.</p>
 
@@ -160,6 +210,26 @@ function setDesign(d){
 }
 document.querySelectorAll('#designs button').forEach(b=>b.onclick=()=>location.reload());
 setDesign('aurora');
+
+// 3D tilt: buttons and drop box lean toward the pointer; background glow drifts with it
+(function(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const tilt=(el,max)=>{
+    el.addEventListener('pointermove',e=>{
+      if(e.pointerType==='touch')return;
+      const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;
+      el.style.setProperty('--rx',(-y*max).toFixed(2)+'deg');el.style.setProperty('--ry',(x*max).toFixed(2)+'deg');
+    });
+    el.addEventListener('pointerleave',()=>{el.style.removeProperty('--rx');el.style.removeProperty('--ry')});
+  };
+  document.querySelectorAll('.t').forEach(b=>tilt(b,18));
+  tilt(drop,5);
+  const root=document.documentElement;
+  document.addEventListener('pointermove',e=>{
+    if(e.pointerType==='touch')return;
+    root.style.setProperty('--px',(e.clientX/innerWidth-.5).toFixed(3));root.style.setProperty('--py',(e.clientY/innerHeight-.5).toFixed(3));
+  });
+})();
 
 const kb=n=>n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
 const kindOf=n=>{n=n.toLowerCase();
