@@ -244,6 +244,7 @@ html[data-design="aurora"] .switch button.on{background:linear-gradient(135deg,#
     <button class="t" data-cat="pdf" data-t="split"><span class="i">✂️</span><b>Split PDF</b><small>page by page</small></button>
     <button class="t" data-cat="pdf" data-t="cpdf"><span class="i">🗜️</span><b>Compress PDF</b><small>smaller file</small></button>
     <button class="t" data-cat="pdf" data-t="rot"><span class="i">🔄</span><b>Rotate PDF</b><small>turn 90°</small></button>
+    <button class="t" data-cat="pdf" data-t="pdf2ppt"><span class="i">📑</span><b>PDF → Slides</b><small>same look</small></button>
     <h3 class="grp" id="grp-ocr"><i>🔎</i><span>Read text</span></h3>
     <button class="t" data-cat="ocr" data-t="ocr"><span class="i">🔎</span><b>Read text (OCR)</b><small>Arabic · English</small></button>
   </div>
@@ -294,7 +295,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/p
 const $=s=>document.querySelector(s);
 const drop=$('#drop'),input=$('#file'),list=$('#list'),actions=$('#actions');
 let target='docx';
-const NAMES={docx:'Word',pdf:'PDF',xlsx:'Excel',pptx:'PowerPoint',txt:'Text',html:'HTML',csv:'CSV',img:'Image',jpg:'JPG',png:'PNG',webp:'WebP',md:'Markdown',json:'JSON',cpdf:'Compress PDF',rot:'Rotate PDF',cimg:'Shrink photo',ocr:'OCR text',merge:'Merged PDF',split:'Split PDF'};
+const NAMES={docx:'Word',pdf:'PDF',xlsx:'Excel',pptx:'PowerPoint',txt:'Text',html:'HTML',csv:'CSV',img:'Image',jpg:'JPG',png:'PNG',webp:'WebP',md:'Markdown',json:'JSON',cpdf:'Compress PDF',rot:'Rotate PDF',pdf2ppt:'PDF → Slides',cimg:'Shrink photo',ocr:'OCR text',merge:'Merged PDF',split:'Split PDF'};
 document.querySelectorAll('.t').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.t').forEach(x=>x.classList.remove('on'));b.classList.add('on');target=b.dataset.t;
 });
@@ -523,7 +524,7 @@ const I18N={
   'Read text (OCR)':'قراءة النص (OCR)',
   'PDF / photo':'PDF / صورة','smaller file':'ملف أصغر','turn 90°':'تدوير 90°','smaller size':'حجم أصغر',
   'pictures to PDF':'صور إلى PDF','pictures to .docx':'صور إلى docx','pictures to .pptx':'صور إلى pptx',
-  'many → one':'عدة ملفات في واحد','page by page':'صفحة بصفحة','Arabic · English':'العربية · الإنجليزية',
+  'PDF → Slides':'PDF إلى شرائح','same look':'نفس الشكل تماماً','many → one':'عدة ملفات في واحد','page by page':'صفحة بصفحة','Arabic · English':'العربية · الإنجليزية',
   'Drop files here':'أفلت الملفات هنا',
   'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG، يمكنك إضافة عدة ملفات معاً. الصور: اختر PDF أو PowerPoint أو Word وستصبح عدة صور ملفاً واحداً.',
   'Clear':'مسح','Selected:':'المحدد:','ℹ Arabic and Kurdish text is saved as page pictures so it looks exactly the same (the text can’t be selected).':'ℹ النص العربي والكردي يُحفظ كصور للصفحات ليظهر تماماً كما هو (لا يمكن تحديد النص).',
@@ -544,7 +545,7 @@ const I18N={
   'Read text (OCR)':'خوێندنەوەی دەق (OCR)',
   'PDF / photo':'PDF / وێنە','smaller file':'فایلی بچووکتر','turn 90°':'سوڕاندن ٩٠°','smaller size':'قەبارەی کەمتر',
   'pictures to PDF':'وێنەکان بۆ PDF','pictures to .docx':'وێنەکان بۆ docx','pictures to .pptx':'وێنەکان بۆ pptx',
-  'many → one':'چەند فایل بۆ یەک','page by page':'لاپەڕە بە لاپەڕە','Arabic · English':'عەرەبی · ئینگلیزی',
+  'PDF → Slides':'PDF بۆ سلاید','same look':'هەمان شێوە','many → one':'چەند فایل بۆ یەک','page by page':'لاپەڕە بە لاپەڕە','Arabic · English':'عەرەبی · ئینگلیزی',
   'Drop files here':'فایلەکان لێرە دابنێ',
   'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG — دەتوانیت چەند فایلێک پێکەوە دابنێیت. بۆ وێنەکان: PDF یان PowerPoint یان Word هەڵبژێرە، چەند وێنەیەک دەبنە یەک فایل.',
   'Clear':'پاککردنەوە','Selected:':'هەڵبژێردراو:',
@@ -566,7 +567,7 @@ const I18N={
   'Read text (OCR)':'خواندنا تێکستێ (OCR)',
   'PDF / photo':'PDF / وێنە','smaller file':'فایلێ بچویکتر','turn 90°':'زڤراندن ٩٠°','smaller size':'قەبارەیێ کێمتر',
   'pictures to PDF':'وێنە بۆ PDF','pictures to .docx':'وێنە بۆ docx','pictures to .pptx':'وێنە بۆ pptx',
-  'many → one':'گەلەک فایل بۆ ئێک','page by page':'پەرە ب پەرە','Arabic · English':'عەرەبی · ئینگلیزی',
+  'PDF → Slides':'PDF بۆ سلایدان','same look':'ئێک شێوە','many → one':'گەلەک فایل بۆ ئێک','page by page':'پەرە ب پەرە','Arabic · English':'عەرەبی · ئینگلیزی',
   'Drop files here':'فایلان ل ڤێرە دانە',
   'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG — تو دشێی گەلەک فایلان ب ئێکەڤە دانی. بۆ وێنەیان: PDF یان PowerPoint یان Word هەلبژێرە، گەلەک وێنە دبنە ئێک فایل.',
   'Clear':'پاقژکرن','Selected:':'یێ هەلبژارتی:',
@@ -736,6 +737,25 @@ async function mergeFiles(files,li){
   finish(li,blob,'merged.pdf',`${files.length} files → 1 PDF (${out.getPageCount()} pages)`);
 }
 
+// PDF → PowerPoint with the same look: every PDF page becomes one slide (as a sharp picture), so nothing moves or changes
+async function pdfToSlides(file,prog){
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+  const first=await pdf.getPage(1),v0=first.getViewport({scale:1});
+  const SW=10,SH=Math.round(SW*v0.height/v0.width*1000)/1000;                 // slide has the shape of the first page
+  const pres=new PptxGenJS();pres.defineLayout({name:'PDFPAGE',width:SW,height:SH});pres.layout='PDFPAGE';
+  pres.title=baseName(file);
+  for(let p=1;p<=pdf.numPages;p++){
+    prog(.9*p/pdf.numPages,`Page ${p} of ${pdf.numPages}…`);
+    const page=await pdf.getPage(p),vp=page.getViewport({scale:2.2}),c=document.createElement('canvas');
+    c.width=vp.width;c.height=vp.height;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:x,viewport:vp}).promise;
+    const r=Math.min(SW/c.width,SH/c.height),w=c.width*r,h=c.height*r;       // pages of other sizes are centred, never stretched
+    const s=pres.addSlide();s.background={color:'FFFFFF'};
+    s.addImage({data:c.toDataURL('image/jpeg',.9).replace(/^data:/,''),x:(SW-w)/2,y:(SH-h)/2,w,h});
+  }
+  const blob=await pres.write({outputType:'blob'});
+  return {blob,name:baseName(file)+'.pptx',label:`PDF → PowerPoint (${pdf.numPages} slides, same look)`};
+}
 async function splitPdf(file,prog){
   const {PDFDocument}=PDFLib,src=await PDFDocument.load(await file.arrayBuffer(),{ignoreEncryption:true});
   const n=src.getPageCount(),zip=new JSZip(),base=baseName(file);
@@ -833,9 +853,9 @@ async function convert(file,li,to){
     if(from!=='img'&&from!=='pdf')throw new Error('Read text (OCR) works on photos and scanned PDFs');
     return ocrFile(file,li,from);
   }
-  if(to==='split'||to==='rot'||to==='cpdf'){
+  if(to==='split'||to==='rot'||to==='cpdf'||to==='pdf2ppt'){
     if(from!=='pdf')throw new Error(`${NAMES[to]} works on PDF files only`);
-    const r=await ({split:splitPdf,rot:rotatePdf,cpdf:compressPdf})[to](file,prog);
+    const r=await ({split:splitPdf,rot:rotatePdf,cpdf:compressPdf,pdf2ppt:pdfToSlides})[to](file,prog);
     return finish(li,r.blob,r.name,r.label);
   }
   if(to==='jpg'||to==='png'||to==='webp'){
