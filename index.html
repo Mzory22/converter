@@ -183,6 +183,8 @@ html[data-design="aurora"] #tabs button.on{background:linear-gradient(135deg,#7c
 html[dir="rtl"] body,html[dir="rtl"] button,html[dir="rtl"] select,.ocrbox textarea{font-family:'Noto Sans Arabic','Segoe UI',Tahoma,system-ui,Arial,sans-serif}
 html[dir="rtl"] body{line-height:1.7}
 html[dir="rtl"] .label{letter-spacing:0}
+html[dir="rtl"] *{letter-spacing:normal!important;text-transform:none!important;font-kerning:normal;text-rendering:optimizeLegibility}
+html[dir="rtl"] body{font-size:17px}
 
 /* design switch */
 .switch{display:flex;gap:6px;margin-bottom:20px}
@@ -280,6 +282,7 @@ html[data-design="aurora"] .switch button.on{background:linear-gradient(135deg,#
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -611,7 +614,7 @@ async function getOcr(lang){
 // clean up a picture for better reading: not too big, not too small, grey and contrasty
 function ocrPrep(src){
   let w=src.width,h=src.height;
-  const up=Math.max(w,h)<700?2:1;
+  const up=Math.max(w,h)<1400?2:1;
   const c=document.createElement('canvas');c.width=w*up;c.height=h*up;
   const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
   try{x.filter='grayscale(1) contrast(1.25)'}catch(e){}
@@ -635,7 +638,7 @@ const soraniFix=t=>{
 async function ocrRead(w,canvas){
   let best=null;
   for(const psm of ['6','11','3']){        // block of text, sparse text, automatic layout
-    await w.setParameters({tessedit_pageseg_mode:psm});
+    await w.setParameters({tessedit_pageseg_mode:psm,user_defined_dpi:'300'});
     const r=(await w.recognize(canvas)).data;
     if(!best||r.confidence>best.confidence)best=r;
     if(best.confidence>=85)break;          // good enough, stop early
@@ -848,11 +851,13 @@ async function convert(file,li,to){
   if(from==='img'&&!['pdf','pptx','docx','html'].includes(to))throw new Error('Photos can become PDF, PowerPoint, Word or HTML (or use Merge PDF)');
   const model=await readers[from](file,prog);
   if(!model.some(s=>s.blocks.length))throw new Error('Nothing readable found in this file');
+  model.exact=!['txt','html','csv','md','json'].includes(from);
+  if(from==='docx'&&to==='pptx'&&model.length===1)await splitDocxPages(file,model);
   prog(.92,`Building ${NAMES[to]}…`);
   model.title=baseName(file);
   const blob=await writers[to](model);
   const name=file.name.replace(/\.[^.]+$/,'')+'.'+to;
-  finish(li,blob,name,`${NAMES[from]} → ${NAMES[to]}`,to==='pdf'&&hasNonLatin(model));
+  finish(li,blob,name,`${NAMES[from]} → ${NAMES[to]}`,to==='pdf'&&pdfUsedPictures);
 }
 
 /* ============ Same design → PDF ============
@@ -968,6 +973,29 @@ async function faithfulPdf(file,from,prog){
   return out.blob();
 }
 
+// Word has no slides: spread the content over as many slides as the document has pages (Word saves that number in the file)
+async function splitDocxPages(file,model){
+  let N=0;
+  try{
+    const z=await JSZip.loadAsync(await file.arrayBuffer());
+    const app=z.file('docProps/app.xml');
+    if(app){const m=(await app.async('string')).match(/<Pages>(\d+)<\/Pages>/);if(m)N=+m[1]}
+  }catch(e){}
+  const blocks=model[0].blocks.filter(b=>b.t!=='img');
+  const wt=b=>b.t==='h'?60+b.x.length:b.t==='p'?30+b.x.length:b.t==='tbl'?b.rows.reduce((n,r)=>n+40+r.join('').length,0):100;
+  const total=blocks.reduce((n,b)=>n+wt(b),0);
+  if(!N)N=Math.max(1,Math.ceil(total/3000));            // no page count saved: about 3000 characters per page
+  if(N<2)return;
+  const pages=Array.from({length:N},(_,k)=>({name:'Page '+(k+1),blocks:[]}));
+  let acc=0,k=0;
+  for(const b of blocks){
+    const w=wt(b);
+    while(k<N-1&&acc+w/2>(k+1)*total/N)k++;
+    pages[k].blocks.push(b);acc+=w;
+  }
+  model.splice(0,model.length,...pages);
+}
+
 /* ============ Common model ============
    model = [ {name, blocks:[ {t:'h',l:1-3,x} | {t:'p',x} | {t:'tbl',rows:[[...]]} ]} ]  (one section per page/sheet/slide) */
 
@@ -989,6 +1017,25 @@ readers.pdf=async(file,prog)=>{
   return pdfToModel(pages);
 };
 
+/* Arabic / Kurdish inside PDFs: many PDFs store the shaped letter forms (ﻛ ﻮ ﺭ) in on-screen order.
+   fixPres turns them back into normal letters; bidiOrder puts the pieces of a line into reading order. */
+const RTL_CH=/[֐-ࣿיִ-﷿ﹰ-﻿]/;
+const fixPres=s=>s.replace(/\u0000/g,'').replace(/[ﭐ-﷿ﹰ-﻿]/g,c=>c.normalize('NFKC'));
+const rtlText=s=>(String(s).match(/[֐-ࣿ]/g)||[]).length>(String(s).match(/[A-Za-z]/g)||[]).length;   // mostly Arabic / Kurdish?
+function bidiOrder(items){
+  items=[...items].sort((a,b)=>a.x-b.x);
+  const isR=it=>RTL_CH.test(it.s),isL=it=>!isR(it)&&/[A-Za-z0-9]/.test(it.s);
+  const nR=items.filter(isR).length,nL=items.filter(isL).length;
+  if(!nR)return items;
+  const runs=[];                                                   // same-direction pieces next to each other
+  for(const it of items){
+    const r=isR(it),neutral=!r&&!isL(it),last=runs[runs.length-1];
+    if(last&&(neutral||last.rtl===r))last.items.push(it);else runs.push({rtl:r,items:[it]});
+  }
+  const ordered=nR>=nL?runs.reverse():runs;                        // a right-to-left line is read from the right
+  return ordered.flatMap(run=>run.rtl?run.items.slice().reverse():run.items);
+}
+
 async function extractPage(page){
   const tc=await page.getTextContent();
   try{await page.getOperatorList()}catch(e){}
@@ -997,7 +1044,7 @@ async function extractPage(page){
     return fcache[fn]={b:/bold|black|heavy|semibold|demi/i.test(nm),i:/italic|oblique/i.test(nm)}};
   const pw=page.view[2]-page.view[0],px0=page.view[0];
   const items=tc.items.filter(i=>i.str.trim()!=='').map(i=>({
-    s:i.str,x:i.transform[4],y:i.transform[5],h:Math.hypot(i.transform[0],i.transform[1])||i.height,w:i.width,fs:fstyle(i.fontName)}));
+    s:fixPres(i.str),x:i.transform[4],y:i.transform[5],h:Math.hypot(i.transform[0],i.transform[1])||i.height,w:i.width,fs:fstyle(i.fontName)}));
   items.sort((a,b)=>b.y-a.y||a.x-b.x);
   const lines=[];
   for(const it of items){
@@ -1009,9 +1056,9 @@ async function extractPage(page){
   return lines.map(l=>{
     l.items.sort((a,b)=>a.x-b.x);
     const cells=[];let cur='',prev=null;
-    for(const it of l.items){
+    for(const it of bidiOrder(l.items)){
       if(prev){
-        const gap=it.x-(prev.x+prev.w);
+        const gap=Math.max(it.x-(prev.x+prev.w),prev.x-(it.x+it.w));
         if(gap>it.h*1.5){cells.push(cur.trim());cur=''}
         else if(gap>it.h*.15&&!cur.endsWith(' ')&&!it.s.startsWith(' '))cur+=' ';
       }
@@ -1172,6 +1219,7 @@ const DOCTHEME={ink:'1E1B4B',body:'1F2937',acc:'7C3AED',head:'4C1D95',zebra:'F3F
 writers.docx=async model=>{
   const {Document,Packer,Paragraph,TextRun,HeadingLevel,Table,TableRow,TableCell,WidthType,ShadingType,BorderStyle,PageBreak,ImageRun,Header,Footer,PageNumber,AlignmentType}=docx;
   const T=DOCTHEME,font='Calibri';
+  const RTLFONT={ascii:'Arial',hAnsi:'Arial',cs:'Arial'};   // Arabic / Kurdish letters need a font that has them
   const H={1:HeadingLevel.HEADING_1,2:HeadingLevel.HEADING_2,3:HeadingLevel.HEADING_3};
   const hs={1:{size:40,color:T.ink},2:{size:32,color:T.head},3:{size:27,color:T.acc}};
   const bd={style:BorderStyle.SINGLE,size:4,color:T.line},borders={top:bd,bottom:bd,left:bd,right:bd};
@@ -1182,8 +1230,8 @@ writers.docx=async model=>{
     if(!firstSec)ch.push(new Paragraph({children:[new PageBreak()]}));
     firstSec=false;
     for(const b of s.blocks){
-      if(b.t==='h')ch.push(new Paragraph({heading:H[b.l],alignment:al(b),spacing:{before:120,after:160},children:[new TextRun({text:b.x,bold:true,size:hs[b.l].size,color:hs[b.l].color,font})]}));
-      else if(b.t==='p')ch.push(new Paragraph({alignment:al(b),spacing:{after:140,line:300},children:[new TextRun({text:b.x,bold:!!b.b,italics:!!b.i,size:22,color:T.body,font})]}));
+      if(b.t==='h')ch.push(new Paragraph({heading:H[b.l],bidirectional:rtlText(b.x),alignment:rtlText(b.x)?undefined:al(b),spacing:{before:120,after:160},children:[new TextRun({text:b.x,bold:true,size:hs[b.l].size,color:hs[b.l].color,font:rtlText(b.x)?RTLFONT:font,rightToLeft:rtlText(b.x),sizeComplexScript:true,boldComplexScript:true})]}));
+      else if(b.t==='p')ch.push(new Paragraph({bidirectional:rtlText(b.x),alignment:rtlText(b.x)?undefined:al(b),spacing:{after:140,line:300},children:[new TextRun({text:b.x,bold:!!b.b,italics:!!b.i,size:22,color:T.body,font:rtlText(b.x)?RTLFONT:font,rightToLeft:rtlText(b.x),sizeComplexScript:true,boldComplexScript:true,italicsComplexScript:!!b.i})]}));
       else if(b.t==='img'){
         const w=Math.min(600,b.w),h=Math.round(b.h*w/b.w),mh=860;
         const [fw,fh]=h>mh?[Math.round(b.w*mh/b.h),mh]:[w,h];
@@ -1191,11 +1239,12 @@ writers.docx=async model=>{
       }
       else if(b.t==='tbl'){
         const rows=norm(b.rows),hdr=rows.length>1;
-        ch.push(new Table({width:{size:100,type:WidthType.PERCENTAGE},
+        const rtlTbl=rows.flat().filter(c=>rtlText(c)).length>rows.flat().length/2;   // Arabic / Kurdish table: first column on the right
+        ch.push(new Table({visuallyRightToLeft:rtlTbl,width:{size:100,type:WidthType.PERCENTAGE},
           rows:rows.map((r,ri)=>new TableRow({tableHeader:hdr&&ri===0,cantSplit:true,children:r.map(c=>new TableCell({
             borders,margins:{top:60,bottom:60,left:100,right:100},
             shading:hdr?{type:ShadingType.CLEAR,color:'auto',fill:ri===0?T.head:(ri%2?'FFFFFF':T.zebra)}:undefined,
-            children:[new Paragraph({children:[new TextRun({text:String(c),bold:hdr&&ri===0,size:20,color:hdr&&ri===0?'FFFFFF':T.body,font})]})]}))}))}));
+            children:[new Paragraph({bidirectional:rtlText(c),children:[new TextRun({text:String(c),bold:hdr&&ri===0,size:20,color:hdr&&ri===0?'FFFFFF':T.body,font:rtlText(c)?RTLFONT:font,rightToLeft:rtlText(c),sizeComplexScript:true,boldComplexScript:hdr&&ri===0})]})]}))}))}));
         ch.push(new Paragraph({spacing:{after:120},children:[]}));
       }
     }
@@ -1205,6 +1254,147 @@ writers.docx=async model=>{
   return Packer.toBlob(new Document({styles:{default:{document:{run:{font,size:22,color:T.body}}}},sections:[{headers:{default:rule},footers:{default:num},children:ch}]}));
 };
 // ---- PDF
+/* ---- PDF with real, selectable Arabic / Kurdish text -------------------------------------------
+   Noto Sans fonts are embedded; fontkit joins the Arabic letters; lines are put into reading order here. */
+const PDF_FONT_URLS={      // real TrueType files (a PDF cannot embed web-font files)
+  ar4:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSansArabic/full/ttf/NotoSansArabic-Regular.ttf',
+  ar7:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSansArabic/full/ttf/NotoSansArabic-Bold.ttf',
+  la4:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf',
+  la7:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/full/ttf/NotoSans-Bold.ttf'
+};
+let PDF_FONT_BYTES=null;
+async function loadPdfFonts(){
+  if(PDF_FONT_BYTES)return PDF_FONT_BYTES;
+  const entries=await Promise.all(Object.entries(PDF_FONT_URLS).map(async([k,u])=>{
+    const r=await fetch(u);if(!r.ok)throw new Error('font '+k+' '+r.status);
+    return [k,new Uint8Array(await r.arrayBuffer())];
+  }));
+  return PDF_FONT_BYTES=Object.fromEntries(entries);
+}
+
+async function pdfVector(model){
+  if(typeof fontkit==='undefined'||typeof PDFLib==='undefined')throw new Error('PDF libraries missing');
+  const {PDFDocument,rgb}=PDFLib;
+  const fb=await loadPdfFonts();
+  const doc=await PDFDocument.create();doc.registerFontkit(fontkit);
+  const F={},cov={};
+  for(const k of Object.keys(fb)){F[k]=await doc.embedFont(fb[k],{subset:true});cov[k]=fontkit.create(fb[k])}
+
+  const PW=595.28,PH=841.89,M=48,MAXW=PW-2*M;
+  const RTLC=/[֐-ࣿיִ-﷿ﹰ-﻿‌‍]/;
+  const MIRROR={'(':')',')':'(','[':']',']':'[','{':'}','}':'{','<':'>','>':'<','«':'»','»':'«'};
+  const pick=(ch,bold)=>{                                   // which font draws this character
+    if(RTLC.test(ch))return bold?'ar7':'ar4';
+    const cp=ch.codePointAt(0),la=bold?'la7':'la4';
+    if(cov[la].hasGlyphForCodePoint(cp))return la;
+    return bold?'ar7':'ar4';
+  };
+  const dirOfWord=w=>RTLC.test(w)?'R':/[A-Za-z0-9À-ɏ]/.test(w)?'L':'N';
+  const isRtlPara=t=>(t.match(/[֐-ࣿיִ-﷿ﹰ-﻿]/g)||[]).length>(t.match(/[A-Za-z]/g)||[]).length;
+
+  // split a word into runs that each use one font (so Arabic letters, Latin letters and digits can sit in one word)
+  const runsOf=(word,bold,mirror)=>{
+    const runs=[];
+    for(const ch0 of Array.from(word)){
+      const ch=mirror&&MIRROR[ch0]?MIRROR[ch0]:ch0,k=pick(ch0,bold),last=runs[runs.length-1];
+      if(last&&last.k===k)last.t+=ch;else runs.push({k,t:ch});
+    }
+    return runs;
+  };
+  const wordWidth=(runs,size)=>runs.reduce((w,r)=>w+F[r.k].widthOfTextAtSize(r.t,size),0);
+
+  let page=doc.addPage([PW,PH]),top=M;                       // top = distance from the top edge
+  const need=h=>{if(top+h>PH-M){page=doc.addPage([PW,PH]);top=M}};
+  const ink=rgb(.07,.07,.1);
+
+  // turn one paragraph into wrapped lines of words, each word keeping its direction
+  function layoutPara(text,size,bold,maxW,rtlBase){
+    const spaceW=F[bold?'la7':'la4'].widthOfTextAtSize(' ',size);
+    const words=text.replace(/[‎‏]/g,'').split(/\s+/).filter(Boolean);
+    let prevDir=rtlBase?'R':'L';
+    const items=words.map(w=>{
+      let dir=dirOfWord(w);if(dir==='N')dir=prevDir;else prevDir=dir;
+      const runs=runsOf(w,bold,(rtlBase&&dir!=='L')||dir==='R');
+      return {dir,runs,w:wordWidth(runs,size)};
+    });
+    const lines=[];let cur=[],cw=0;
+    for(const it of items){
+      const add=(cur.length?spaceW:0)+it.w;
+      if(cur.length&&cw+add>maxW){lines.push(cur);cur=[it];cw=it.w}else{cur.push(it);cw+=add}
+    }
+    if(cur.length)lines.push(cur);
+    return {lines,spaceW};
+  }
+  // visual (left→right) order of the words of one line
+  function visualWords(line,rtlBase){
+    const runs=[];
+    for(const w of line){const last=runs[runs.length-1];if(last&&last.dir===w.dir)last.words.push(w);else runs.push({dir:w.dir,words:[w]})}
+    const ordered=rtlBase?runs.slice().reverse():runs;
+    return ordered.flatMap(r=>r.dir==='R'?r.words.slice().reverse():r.words);
+  }
+  // draw one line; x0/x1 = left/right edge of the box, rtl = right aligned
+  function drawLine(line,spaceW,size,bold,x0,x1,baselineY,rtlBase){
+    const vis=visualWords(line,rtlBase);
+    const total=vis.reduce((w,it)=>w+it.w,0)+spaceW*(vis.length-1);
+    let x=rtlBase?x1-total:x0;
+    for(const it of vis){
+      const runs=it.dir==='R'?it.runs.slice().reverse():it.runs;
+      for(const r of runs){
+        page.drawText(r.t,{x,y:baselineY,size,font:F[r.k],color:ink});
+        x+=F[r.k].widthOfTextAtSize(r.t,size);
+      }
+      x+=spaceW;
+    }
+  }
+  const paragraph=(text,size,bold,after)=>{
+    for(const part of String(text).split(/\r?\n/)){
+      if(!part.trim()){top+=size*.8;continue}
+      const rtl=isRtlPara(part),{lines,spaceW}=layoutPara(part,size,bold,MAXW,rtl),lh=size*1.75;
+      for(const line of lines){need(lh);drawLine(line,spaceW,size,bold,M,PW-M,PH-top-size*1.15,rtl);top+=lh}
+    }
+    top+=after;
+  };
+  const table=rows=>{
+    rows=norm(rows).map(r=>r.map(String));
+    const n=rows[0].length,cw=MAXW/n,size=10,pad=5,lh=size*1.7;
+    const rtlTable=rows.flat().filter(isRtlPara).length>rows.flat().length/2;
+    rows.forEach((row,ri)=>{
+      const bold=ri===0;
+      const cells=row.map(c=>{const rtl=isRtlPara(c);return {rtl,...layoutPara(c,size,bold,cw-2*pad,rtl)}});
+      const h=Math.max(...cells.map(c=>c.lines.length),1)*lh+2*pad;
+      need(h);
+      const ys=PH-top-h;
+      row.forEach((_,ci)=>{
+        const col=rtlTable?n-1-ci:ci,x=M+col*cw,c=cells[ci];
+        page.drawRectangle({x,y:ys,width:cw,height:h,borderColor:rgb(.55,.55,.6),borderWidth:.6,color:ri===0?rgb(.93,.92,.98):undefined});
+        c.lines.forEach((line,li)=>drawLine(line,c.spaceW,size,bold,x+pad,x+cw-pad,ys+h-pad-size*1.15-li*lh,c.rtl));
+      });
+      top+=h;
+    });
+    top+=12;
+  };
+
+  let firstSection=true;
+  for(const sec of model){
+    if(!sec.blocks.length)continue;
+    if(!firstSection){page=doc.addPage([PW,PH]);top=M}
+    firstSection=false;
+    for(const b of sec.blocks){
+      if(b.t==='h')paragraph(b.x,[0,22,17,14][b.l],true,8);
+      else if(b.t==='p')paragraph(b.x,11,false,5);
+      else if(b.t==='tbl')table(b.rows);
+      else if(b.t==='img'){
+        const bytes=Uint8Array.from(atob(b.src.split(',')[1]),c=>c.charCodeAt(0));
+        const im=await doc.embedJpg(bytes);
+        let w=MAXW,h=im.height*w/im.width;const maxH=PH-2*M;if(h>maxH){h=maxH;w=im.width*h/im.height}
+        need(h);page.drawImage(im,{x:M,y:PH-top-h,width:w,height:h});top+=h+10;
+      }
+    }
+  }
+  return new Blob([await doc.save()],{type:'application/pdf'});
+}
+
+
 // PowerPoint → PDF with the real look: the slides are drawn by the browser exactly as designed, then each slide becomes a PDF page
 async function pptxToPdf(file,prog){
   if(typeof pptxPreview==='undefined')return null;
@@ -1232,6 +1422,7 @@ async function pptxToPdf(file,prog){
 }
 
 // Arabic, Kurdish and other scripts: the browser draws the text (right letters, right-to-left), then each page is saved as a picture
+let pdfUsedPictures=false;
 async function pdfAsPictures(model){
   const PW=794,PH=1123,M=48,CW=PW-2*M,MAXH=PH-2*M,SC=2;
   const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1278,7 +1469,10 @@ async function pdfAsPictures(model){
 }
 
 writers.pdf=async model=>{
-  if(hasNonLatin(model))return pdfAsPictures(model);
+  pdfUsedPictures=false;
+  if(hasNonLatin(model)){
+    try{return await pdfVector(model)}catch(err){console.warn('Real-text PDF failed, using page pictures',err);pdfUsedPictures=true;return pdfAsPictures(model)}
+  }
   const d=new jspdf.jsPDF({unit:'pt',format:'a4'}),T=DOCTHEME;
   const rgb=h=>[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
   const fillC=h=>d.setFillColor(...rgb(h)),textC=h=>d.setTextColor(...rgb(h)),drawC=h=>d.setDrawColor(...rgb(h));
@@ -1341,6 +1535,8 @@ writers.xlsx=async model=>{
     ws['!cols']=Array.from({length:cols},(_,c)=>({wch:Math.min(60,Math.max(10,...rows.map(r=>String(r[c]??'').length)))}));
     XLSX.utils.book_append_sheet(wb,ws,n);
   });
+  const texts=model.flatMap(s=>s.blocks.flatMap(b=>b.t==='tbl'?b.rows.flat():b.t==='img'?[]:[b.x])).map(String);
+  if(texts.filter(rtlText).length>texts.length/2)wb.Workbook={Views:[{RTL:true}]};     // Arabic / Kurdish: the sheets open right-to-left
   return new Blob([XLSX.write(wb,{bookType:'xlsx',type:'array'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 };
 
@@ -1364,9 +1560,9 @@ writers.html=async model=>{
   const st=b=>b.al==='c'?' style="text-align:center"':'';
   const wrap=(b,x)=>{x=e(x);if(b.b)x=`<strong>${x}</strong>`;if(b.i)x=`<em>${x}</em>`;return x};
   const body=model.map(s=>s.blocks.map(b=>{
-    if(b.t==='h')return `<h${b.l}${st(b)}>${e(b.x)}</h${b.l}>`;
-    if(b.t==='p')return `<p${st(b)}>${wrap(b,b.x)}</p>`;
-    if(b.t==='tbl'){const rows=norm(b.rows),hdr=rows.length>1;return '<div class="tw"><table>'+rows.map((r,ri)=>'<tr>'+r.map(c=>hdr&&ri===0?`<th>${e(c)}</th>`:`<td>${e(c)}</td>`).join('')+'</tr>').join('')+'</table></div>'}
+    if(b.t==='h')return `<h${b.l}${st(b)} dir="auto">${e(b.x)}</h${b.l}>`;
+    if(b.t==='p')return `<p${st(b)} dir="auto">${wrap(b,b.x)}</p>`;
+    if(b.t==='tbl'){const rows=norm(b.rows),hdr=rows.length>1,rt=rows.flat().filter(c=>rtlText(c)).length>rows.flat().length/2;return '<div class="tw"><table'+(rt?' dir="rtl"':'')+'>'+rows.map((r,ri)=>'<tr>'+r.map(c=>hdr&&ri===0?`<th dir="auto">${e(c)}</th>`:`<td dir="auto">${e(c)}</td>`).join('')+'</tr>').join('')+'</table></div>'}
     if(b.t==='img')return `<p style="text-align:center"><img src="${b.src}" alt=""></p>`;
     return '';
   }).join('\n')).filter(Boolean).join('\n<hr>\n');
@@ -1374,7 +1570,7 @@ writers.html=async model=>{
 *{box-sizing:border-box}body{margin:0;background:#f8fafc;color:var(--body);font:16px/1.7 'Segoe UI',Calibri,system-ui,sans-serif}
 main{max-width:820px;margin:32px auto;background:#fff;border-left:8px solid var(--acc);border-radius:0 12px 12px 0;padding:40px 44px;box-shadow:0 2px 16px rgba(30,27,75,.08)}
 h1,h2,h3{line-height:1.25;margin:1.3em 0 .5em}main>:first-child{margin-top:0}h1{color:var(--ink);font-size:32px}h1:after{content:"";display:block;width:46px;height:3px;background:var(--acc);margin-top:8px}h2{color:var(--head);font-size:25px}h3{color:var(--acc);font-size:20px}
-p{margin:.7em 0}.tw{overflow-x:auto;margin:18px 0}table{border-collapse:collapse;width:100%}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left;vertical-align:top}th{background:var(--head);color:#fff}tr:nth-child(even) td{background:var(--zebra)}
+p{margin:.7em 0}.tw{overflow-x:auto;margin:18px 0}table{border-collapse:collapse;width:100%}th,td{border:1px solid var(--line);padding:8px 12px;text-align:start;vertical-align:top}th{background:var(--head);color:#fff}tr:nth-child(even) td{background:var(--zebra)}
 img{max-width:100%;height:auto;border-radius:6px}hr{margin:36px 0;border:0;border-top:1px solid var(--line)}
 @media(max-width:600px){main{margin:0;padding:24px 18px;border-radius:0}}`;
   const html=`<!doctype html>\n<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Converted document</title>\n<style>${css}</style></head>\n<body><main>\n${body}\n</main></body></html>`;
@@ -1427,9 +1623,58 @@ writers.json=async model=>{
   return new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
 };
 
+function pptxRtlFix(xml){
+  const RX=/[\u0590-\u08FF\uFB50-\uFEFF]/;
+  if(!RX.test(xml))return xml;
+  const A='http://schemas.openxmlformats.org/drawingml/2006/main';
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  if(doc.getElementsByTagName('parsererror').length)return xml;
+  for(const p of [...doc.getElementsByTagName('a:p')]){
+    const text=[...p.getElementsByTagName('a:t')].map(t=>t.textContent).join('');
+    if(!RX.test(text))continue;
+    let pPr=p.firstElementChild&&p.firstElementChild.nodeName==='a:pPr'?p.firstElementChild:null;
+    if(!pPr){pPr=doc.createElementNS(A,'a:pPr');p.insertBefore(pPr,p.firstChild)}
+    pPr.setAttribute('rtl','1');
+    if(pPr.getAttribute('algn')!=='ctr')pPr.setAttribute('algn','r');
+    for(const r of [...p.getElementsByTagName('a:rPr')]){
+      r.setAttribute('lang','ar-SA');
+      let lat=[...r.children].find(c=>c.nodeName==='a:latin');
+      if(!lat){lat=doc.createElementNS(A,'a:latin');r.appendChild(lat)}
+      lat.setAttribute('typeface','Arial');
+      [...r.children].filter(c=>c.nodeName==='a:cs').forEach(c=>c.remove());
+      const cs=doc.createElementNS(A,'a:cs');cs.setAttribute('typeface','Arial');
+      lat.after(cs);
+    }
+  }
+  return new XMLSerializer().serializeToString(doc);
+}
 // ---- PowerPoint (styled slides; the text is kept exactly as in the source: nothing added, removed or reworded)
 writers.pptx=async model=>{
   const pres=new PptxGenJS();pres.layout='LAYOUT_16x9';
+  // Arabic / Kurdish text: right-to-left paragraphs, right aligned, in a font that has the letters; such tables run from the right
+  {
+    const addSlide0=pres.addSlide.bind(pres);
+    const txtOf=t=>Array.isArray(t)?t.map(r=>r&&r.text!==undefined?r.text:r).join(' '):String(t);
+    pres.addSlide=so=>{
+      const s=addSlide0(so),addText0=s.addText.bind(s),addTable0=s.addTable.bind(s);
+      s.addText=(t,o={})=>{
+        if(rtlText(txtOf(t)))o={...o,rtlMode:true,align:o.align==='center'?'center':'right',fontFace:'Arial'};
+        return addText0(t,o);
+      };
+      s.addTable=(rows,o={})=>{
+        const cellText=c=>String(c&&c.text!==undefined?c.text:c);
+        const flat=rows.flat().map(cellText),rtlT=flat.filter(rtlText).length>flat.length/2;
+        rows=rows.map(r=>{
+          const cells=r.map(c=>{const text=cellText(c),op=(c&&c.options)||{};
+            return rtlText(text)?{text,options:{...op,rtlMode:true,align:'right',fontFace:'Arial'}}:{text,options:op}});
+          return rtlT?cells.reverse():cells;
+        });
+        if(rtlT&&o.colW)o={...o,colW:[...o.colW].reverse()};
+        return addTable0(rows,o);
+      };
+      return s;
+    };
+  }
   pres.title=(model.title||'Presentation').replace(/[_-]+/g,' ').trim();pres.author='Masrour';
   const C={ink:'1E1B4B',body:'374151',acc:'7C3AED',cyan:'06B6D4',head:'4C1D95',zebra:'F3F0FF',line:'E2E8F0'};
   const F='Calibri',X=.7,W=8.6,LIM=5.15,noLine={type:'none'};
@@ -1464,11 +1709,12 @@ writers.pptx=async model=>{
   // only splits a paragraph (at a sentence or space) when it is too long for one whole slide; no characters are changed
   const splitLong=t=>{const out=[];while(t.length>1300){let k=t.lastIndexOf('. ',1200);if(k<600)k=t.lastIndexOf(' ',1200);if(k<1)k=1200;out.push(t.slice(0,k+1));t=t.slice(k+1).replace(/^\s+/,'')}out.push(t);return out};
   const est=(items,fs)=>items.reduce((h,t)=>h+Math.ceil(t.length/(1300/fs))*fs*1.22/72+.12,0);
-  const pickFs=(items,room)=>{for(const fs of [22,20,18,16,14,12])if(est(items,fs)<=room)return fs;return 14};
+  const pickFs=(items,room)=>{for(const fs of [22,20,18,16,14,12,11,10,9,8])if(est(items,fs)<=room)return fs;return 8};
 
   const textual=sec=>sec.blocks.length&&!sec.blocks.every(b=>b.t==='img');
+  const exact=model.exact!==false;      // true: one slide for every source page / slide / sheet, nothing added or split
   // cover slide
-  if(model.some(textual)){
+  if(!exact&&model.some(textual)){
     const s=pres.addSlide({masterName:'COVER'});
     s.addShape(pres.ShapeType.ellipse,{x:-1.8,y:-2.4,w:6,h:6,fill:{color:'7C3AED',transparency:62},line:noLine});
     s.addShape(pres.ShapeType.ellipse,{x:6.8,y:3.0,w:5.4,h:5.4,fill:{color:'06B6D4',transparency:70},line:noLine});
@@ -1482,7 +1728,7 @@ writers.pptx=async model=>{
   const secTitle=sec=>{const h=sec.blocks.find(b=>b.t==='h');return (h&&h.x)||sec.name};
   const agenda=model.filter(textual).map(secTitle);
   const named=agenda.filter(t=>!/^(page|slide|sheet)\s*\d+$/i.test(t)).length;
-  if(agenda.length>=3&&agenda.length<=8&&named>=agenda.length/2){
+  if(!exact&&agenda.length>=3&&agenda.length<=8&&named>=agenda.length/2){
     const {s}=slide('Agenda');
     agenda.forEach((t,i)=>{
       const yy=1.55+i*.46;
@@ -1492,39 +1738,31 @@ writers.pptx=async model=>{
     });
   }
 
-  model.forEach(sec=>{
-    if(!sec.blocks.length)return;
-    if(sec.blocks.every(b=>b.t==='img')){
-      sec.blocks.forEach(b=>{
-        const s=pres.addSlide({masterName:'PHOTO'});
-        const w0=10,h0=5.625,r=Math.min(w0/b.w,h0/b.h),w=b.w*r,h=b.h*r;
-        s.addImage({data:b.src.replace(/^data:/,''),x:(w0-w)/2,y:(h0-h)/2,w,h});
-      });
-      return;
-    }
-    let blocks=sec.blocks.filter(b=>b.t!=='img');
-    if(!blocks.length)return;
-    let title='';
-    if(blocks[0].t==='h'){title=blocks[0].x;blocks=blocks.slice(1)}
-    let {s,y}=slide(title);
-    const next=()=>{({s,y}=slide(''))};
-
+  const stub={addText(){},addShape(){},addTable(){},addImage(){}};
+  const drawSection=(sec,sc,dry)=>{
+    let over=false;
+    let blocks=sec.blocks.filter(b=>b.t!=='img'),title='';
+    if(blocks[0]&&blocks[0].t==='h'){title=blocks[0].x;blocks=blocks.slice(1)}
+    let s,y;
+    if(dry){s=stub;y=title?1.5:.5}else{({s,y}=slide(title))}
+    const next=()=>{if(exact)over=true;else if(!dry){({s,y}=slide(''))}};
+    const FS=n=>Math.max(7,n*sc);
     for(let i=0;i<blocks.length;){
       const b=blocks[i];
       if(b.t==='h'){
-        if(LIM-y<1)next();
-        s.addText(b.x,{x:X,y,w:W,h:.45,fontFace:F,fontSize:b.l===2?22:20,bold:true,color:C.acc,valign:'middle'});
-        y+=.55;i++;continue;
+        if(LIM-y<(exact?.55:1))next();
+        s.addText(b.x,{x:X,y,w:W,h:.45,fontFace:F,fontSize:FS(b.l===2?22:20),bold:true,color:C.acc,valign:'middle'});
+        y+=.55*Math.max(.7,sc);i++;continue;
       }
       if(b.t==='p'){
         const items=[];let j=i;
         while(j<blocks.length&&blocks[j].t==='p'){items.push(...splitLong(blocks[j].x));j++}
         // short paragraphs become a numbered card grid (text unchanged)
         if(items.length>=3&&items.length<=8&&items.every(t=>t.length<=170)){
-          const cols=2,rows=Math.ceil(items.length/cols),gap=.22,cw=(W-gap)/cols;
+          const cols=2,rows=Math.ceil(items.length/cols),gap=.22*Math.max(.6,sc),cw=(W-gap)/cols;
           const room=LIM-y-.2,ch=Math.min(1.5,(room-(rows-1)*gap)/rows);
-          if(ch>=.72){
-            const gfs=ch>1.1?16:14;
+          if(ch>=.72||(exact&&ch>=.45)){
+            const gfs=FS(ch>1.1?16:14);
             items.forEach((t,k)=>{
               const cx=X+(k%cols)*(cw+gap),cy=y+Math.floor(k/cols)*(ch+gap),col=k%2?C.cyan:C.acc;
               s.addShape(pres.ShapeType.roundRect,{x:cx,y:cy,w:cw,h:ch,rectRadius:.14,fill:{color:'FFFFFF'},line:{color:C.line,width:.75},
@@ -1536,6 +1774,17 @@ writers.pptx=async model=>{
             });
             y+=rows*ch+(rows-1)*gap+.3;i=j;continue;
           }
+        }
+        if(exact){
+          // the whole page on one slide: the biggest text size that fits
+          const fs=pickFs(items,LIM-y-.25),h=Math.max(.4,est(items,fs));
+          if(h>LIM-y-.25)next();
+          s.addShape(pres.ShapeType.roundRect,{x:X-.15,y:y-.06,w:W+.3,h:h+.12,rectRadius:.12,fill:{color:'FFFFFF'},line:{color:C.line,width:.75},
+            shadow:{type:'outer',blur:8,offset:2,angle:90,color:'000000',opacity:.12}});
+          s.addShape(pres.ShapeType.rect,{x:X-.15,y:y-.06,w:.07,h:h+.12,fill:{color:C.acc},line:noLine});
+          s.addText(items.map(t=>({text:t,options:{breakLine:true,paraSpaceAfter:6}})),
+            {x:X+.05,y,w:W-.1,h:h,fontFace:F,fontSize:fs,color:C.body,valign:'top'});
+          y+=h+.3;i=j;continue;
         }
         const fs=pickFs(items,LIM-y-.25);
         let chunk=[],h=0;
@@ -1561,10 +1810,16 @@ writers.pptx=async model=>{
         const rows=norm(b.rows).map(r=>r.map(String)),n=rows[0].length;
         const lens=Array.from({length:n},(_,c)=>Math.min(40,Math.max(4,...rows.map(r=>r[c].length))));
         const tot=lens.reduce((a,v)=>a+v,0),colW=lens.map(v=>W*v/tot);
-        const fs=n>6?10:n>4?11:12;
-        const rh=r=>Math.max(...r.map((c,ci)=>Math.ceil(c.length/(colW[ci]*132/fs))))*fs*1.3/72+.14;
+        const fs=FS(n>6?10:n>4?11:12);
+        const rh=r=>Math.max(...r.map((c,ci)=>Math.ceil(c.length/(colW[ci]*132/fs))))*fs*1.3/72+.14*Math.max(.6,sc);
         const cell=(c,ri)=>({text:c,options:{fontFace:F,fontSize:fs,bold:ri===0,color:ri===0?'FFFFFF':C.body,
           fill:{color:ri===0?C.head:(ri%2?'FFFFFF':C.zebra)},valign:'middle',border:{type:'solid',pt:.5,color:C.line}}});
+        if(exact){
+          const hs=rows.map(rh),used=hs.reduce((a,v)=>a+v,0);
+          if(y+used>LIM)next();
+          s.addTable(rows.map((r,k)=>r.map(c=>cell(c,k))),{x:X,y,w:W,colW,rowH:hs});
+          y+=used+.2;i++;continue;
+        }
         let ri=0;
         while(ri<rows.length){
           if(LIM-y<rh(rows[ri])+.1&&y>.6)next();
@@ -1578,9 +1833,24 @@ writers.pptx=async model=>{
       }
       i++;
     }
+    return over;
+  };
+
+  model.forEach(sec=>{
+    if(sec.blocks.length&&sec.blocks.every(b=>b.t==='img')){
+      sec.blocks.forEach(b=>{
+        const s=pres.addSlide({masterName:'PHOTO'});
+        const w0=10,h0=5.625,r=Math.min(w0/b.w,h0/b.h),w=b.w*r,h=b.h*r;
+        s.addImage({data:b.src.replace(/^data:/,''),x:(w0-w)/2,y:(h0-h)/2,w,h});
+      });
+      return;
+    }
+    let sc=1;
+    if(exact)while(sc>.55&&drawSection(sec,sc,true))sc-=.07;
+    drawSection(sec,exact?Math.max(.55,sc):1,false);     // an empty page still gets its (blank) slide
   });
   // closing slide
-  if(model.some(textual)){
+  if(!exact&&model.some(textual)){
     const s=pres.addSlide({masterName:'COVER'});
     s.addShape(pres.ShapeType.ellipse,{x:6.5,y:-2,w:5.5,h:5.5,fill:{color:'06B6D4',transparency:72},line:noLine});
     s.addShape(pres.ShapeType.ellipse,{x:-1.8,y:3.2,w:5,h:5,fill:{color:'7C3AED',transparency:65},line:noLine});
@@ -1592,8 +1862,9 @@ writers.pptx=async model=>{
   const raw=await pres.write({outputType:'arraybuffer'});
   const zip=await JSZip.loadAsync(raw);
   for(const n of Object.keys(zip.files).filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n))){
-    const xml=await zip.file(n).async('string');
-    if(!xml.includes('<p:transition'))zip.file(n,xml.replace('</p:sld>','<p:transition spd="med"><p:fade/></p:transition></p:sld>'));
+    let xml=pptxRtlFix(await zip.file(n).async('string'));
+    if(!xml.includes('<p:transition'))xml=xml.replace('</p:sld>','<p:transition spd="med"><p:fade/></p:transition></p:sld>');
+    zip.file(n,xml);
   }
   return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});
 };
