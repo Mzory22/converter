@@ -863,7 +863,7 @@ async function convert(file,li,to){
   if(to==='pdf'&&['docx','html','xlsx','pptx'].includes(from)){
     try{
       const blob=await faithfulPdf(file,from,prog);
-      return finish(li,blob,baseName(file)+'.pdf',NAMES[from]+' → PDF (same design)');
+      return finish(li,blob,baseName(file)+'.pdf',NAMES[from]+' → PDF (same design, text can be selected)');
     }catch(err){console.warn('Same-design PDF failed, using the simple layout:',err);prog(.05,'Using the simple layout…')}
   }
   if(from==='pptx'&&to==='pdf'){
@@ -937,16 +937,63 @@ async function fpImages(doc){await Promise.all([...doc.images].map(im=>im.comple
 
 // builds the PDF one picture-page at a time; every page can have its own size
 function fpPdf(){
-  let d=null;
+  let d=null;const texts=[];
   return {
-    add(canvas,wpt,hpt){
+    add(canvas,wpt,hpt,words,boxPx){
       const o=wpt>hpt?'l':'p';
       if(!d)d=new jspdf.jsPDF({unit:'pt',format:[wpt,hpt],orientation:o});else d.addPage([wpt,hpt],o);
       d.addImage(canvas.toDataURL('image/jpeg',.92),'JPEG',0,0,wpt,hpt);
+      texts.push({words:words||[],scale:wpt/(boxPx||wpt)});             // the words and where they are, for the hidden text layer
     },
     get count(){return d?d.getNumberOfPages():0},
+    get texts(){return texts},
     blob(){return d.output('blob')}
   };
+}
+
+// every word of a drawn page with its position (CSS px, relative to the page box): used for the hidden, selectable text layer
+function fpWords(root,boxLeft,boxTop){
+  const doc=root.ownerDocument,win=doc.defaultView,out=[];
+  const tw=doc.createTreeWalker(root,4);
+  for(let n;(n=tw.nextNode());){
+    const t=n.nodeValue;if(!t||!t.trim())continue;
+    const p=n.parentElement;if(!p)continue;
+    const cs=win.getComputedStyle(p);if(cs.display==='none'||cs.visibility==='hidden')continue;
+    const re=/\S+/g;let m;
+    while((m=re.exec(t))){
+      const r=doc.createRange();r.setStart(n,m.index);r.setEnd(n,m.index+m[0].length);
+      const b=r.getBoundingClientRect();
+      if(b.width<.5||b.height<.5)continue;
+      out.push({t:m[0],x:b.left-boxLeft,y:b.top-boxTop,w:b.width,h:b.height});
+    }
+  }
+  return out;
+}
+
+// puts the invisible words on top of the page pictures (words in reading order, each tagged with its real letters)
+async function addTextLayer(blob,pages){
+  if(!pages.some(p=>p.words.length))return blob;
+  const {PDFDocument,PDFOperator,PDFOperatorNames,PDFName,PDFHexString}=PDFLib;
+  const doc=await PDFDocument.load(await blob.arrayBuffer());doc.registerFontkit(fontkit);
+  const needAr=pages.some(p=>p.words.some(w=>RTL_CH.test(w.t)));
+  const fb=await loadPdfFonts(needAr?['la4','ar4']:['la4']);
+  const F={la:await doc.embedFont(fb.la4,{subset:true})};if(needAr)F.ar=await doc.embedFont(fb.ar4,{subset:true});
+  doc.getPages().forEach((pg,i)=>{
+    const info=pages[i];if(!info)return;
+    const H=pg.getHeight();
+    info.words.forEach((w,wi)=>{
+      try{
+        const font=RTL_CH.test(w.t)?F.ar:F.la,hpt=w.h*info.scale,wpt=w.w*info.scale;
+        let size=Math.max(3,hpt*.8);
+        const nat=font.widthOfTextAtSize(w.t,size);
+        if(nat>wpt*.92)size=Math.max(2.5,size*wpt*.92/nat);                // always a little narrower than the word on the page, so neighbours never touch
+        pg.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence,[PDFName.of('Span'),doc.context.obj({ActualText:PDFHexString.fromText(w.t+(wi<info.words.length-1?' ':''))})]));
+        pg.drawText(w.t,{x:w.x*info.scale,y:H-(w.y*info.scale+hpt*.8),size,font,opacity:0});
+        pg.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+      }catch(e){}
+    });
+  });
+  return new Blob([await doc.save()],{type:'application/pdf'});
 }
 
 // a normal page of flowing content (HTML, spreadsheet sheets): cut into A4 pages
@@ -958,7 +1005,7 @@ async function fpFlow(f,out,prog,base,span){
   for(let k=0;k<n;k++){
     const h=Math.min(PH,total-k*PH);
     const c=await html2canvas(doc.documentElement,{scale:2,backgroundColor:'#ffffff',logging:false,windowWidth:PW,width:PW,x:0,y:k*PH,height:h,scrollX:0,scrollY:0});
-    out.add(c,FPDF.A4W,c.height/c.width*FPDF.A4W);
+    out.add(c,FPDF.A4W,c.height/c.width*FPDF.A4W,doc.body?fpWords(doc.body,0,k*PH).filter(w=>w.y>=-2&&w.y<h):[],PW);
     prog(base+span*(k+1)/n,'Page '+(k+1)+' of '+n+'…');
     await fpWait(0);
   }
@@ -975,7 +1022,7 @@ async function fpDocx(file,out,prog){
     if(!pages.length)throw new Error('No pages found');
     for(let k=0;k<pages.length;k++){
       const el=pages[k],c=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',logging:false});
-      out.add(c,el.offsetWidth*.75,el.offsetHeight*.75);
+      out.add(c,el.offsetWidth*.75,el.offsetHeight*.75,(()=>{const b=el.getBoundingClientRect();return fpWords(el,b.left,b.top)})(),el.offsetWidth);
       prog(.2+.7*(k+1)/pages.length,'Page '+(k+1)+' of '+pages.length+'…');
       await fpWait(0);
     }
@@ -1015,7 +1062,7 @@ async function fpPptx(file,out,prog){
       const wr=root.querySelector('.pptx-preview-wrapper');
       if(!wr||!wr.children.length)throw new Error('Slide '+(k+1)+' could not be drawn');
       const c=await html2canvas(wr,{scale:2,backgroundColor:'#ffffff',logging:false});
-      out.add(c,720,405);
+      out.add(c,720,405,(()=>{const b=wr.getBoundingClientRect();return fpWords(wr,b.left,b.top)})(),wr.offsetWidth||960);
       prog(.2+.7*(k+1)/n,'Slide '+(k+1)+' of '+n+'…');
       if(k<n-1)pv.renderNextSlide();
     }
@@ -1026,7 +1073,9 @@ async function faithfulPdf(file,from,prog){
   const out=fpPdf();
   await ({docx:fpDocx,html:fpHtml,xlsx:fpXlsx,pptx:fpPptx})[from](file,out,prog);
   if(!out.count)throw new Error('Nothing to draw');
-  return out.blob();
+  const blob=out.blob();
+  try{return await addTextLayer(blob,out.texts)}                      // the same pictures, plus hidden words you can select, search and copy
+  catch(err){console.warn('Text layer failed, keeping the picture-only PDF:',err);return blob}
 }
 
 // Word has no slides: spread the content over as many slides as the document has pages (Word saves that number in the file)
@@ -1064,10 +1113,15 @@ readers.pdf=async(file,prog)=>{
   try{pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise}
   catch(e){throw new Error(e&&e.name==='PasswordException'?'This PDF is password protected. Remove the password first':'This PDF is damaged or is not a real PDF file')}
   const pages=[];
+  let tagsByPage=null;
+  try{                                                                // only PDFs made with pdf-lib (this converter) carry the word tags
+    const meta=await pdf.getMetadata();
+    if(/pdf-lib/i.test((meta.info&&meta.info.Producer)||''))tagsByPage=await pdfActualTexts(await file.arrayBuffer(),pdf.numPages);
+  }catch(e){tagsByPage=null}
   for(let p=1;p<=pdf.numPages;p++){
     prog(p/pdf.numPages*.85,`Page ${p} of ${pdf.numPages}…`);
     await new Promise(r=>setTimeout(r,0));
-    pages.push(await extractPage(await pdf.getPage(p)));
+    pages.push(await extractPage(await pdf.getPage(p),tagsByPage&&tagsByPage[p-1]));
   }
   if(pages.flat().reduce((n,l)=>n+l.text.length,0)<20){const e=new Error('No text found (scanned PDF? needs OCR)');e.noText=true;throw e}
   return pdfToModel(pages);
@@ -1092,8 +1146,39 @@ function bidiOrder(items){
   return ordered.flatMap(run=>run.rtl?run.items.slice().reverse():run.items);
 }
 
-async function extractPage(page){
-  const tc=await page.getTextContent();
+/* PDFs made by this converter tag every word with its real letters (ActualText). pdf.js does not show those tags,
+   so they are read from the page itself, in the order they are written; they replace the shaped glyph pieces. */
+async function pdfActualTexts(bytes,n){
+  const doc=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true,updateMetadata:false});
+  const out=[];
+  for(const pg of doc.getPages().slice(0,n)){
+    const c=pg.node.Contents();
+    const streams=c instanceof PDFLib.PDFStream?[c]:(c&&c.asArray?c.asArray().map(r=>doc.context.lookup(r)):[]);
+    let txt='';for(const s of streams)txt+=new TextDecoder('latin1').decode(PDFLib.decodePDFRawStream(s).decode());
+    out.push([...txt.matchAll(/\/ActualText\s*<([0-9A-Fa-f]+)>/g)].map(m=>{const h=m[1];let s='';for(let i=4;i<h.length;i+=4)s+=String.fromCharCode(parseInt(h.slice(i,i+4),16));return s.replace(/\s+$/,'')}));
+  }
+  return out;
+}
+
+async function extractPage(page,tags){
+  const useTags=!!(tags&&tags.length);
+  const tc=await page.getTextContent(useTags?{includeMarkedContent:true}:undefined);
+  if(useTags){
+    const begins=tc.items.filter(i=>i.type==='beginMarkedContentProps'&&i.tag==='Span').length;
+    if(begins===tags.length){                                        // same number of tagged words: replace each group of glyph pieces by the real word
+      const merged=[];let k=-1,grp=null;
+      const flush=()=>{if(!grp)return;const its=grp.items.filter(i=>i.str.trim()!=='');                 // the spaces pdf.js puts between words are not part of the word
+        if(its.length){const x0=Math.min(...its.map(i=>i.transform[4])),x1=Math.max(...its.map(i=>i.transform[4]+i.width));
+          merged.push({...its[0],str:grp.tag,width:x1-x0,transform:[its[0].transform[0],its[0].transform[1],its[0].transform[2],its[0].transform[3],x0,its[0].transform[5]]})}
+        grp=null};
+      for(const i of tc.items){
+        if(i.type==='beginMarkedContentProps'){flush();if(i.tag==='Span'){k++;grp={tag:tags[k],items:[]}}}
+        else if(i.type==='endMarkedContent')flush();
+        else if(i.str!==undefined){if(grp)grp.items.push(i);else merged.push(i)}
+      }
+      flush();tc.items=merged;
+    }else tc.items=tc.items.filter(i=>i.str!==undefined);
+  }
   try{await page.getOperatorList()}catch(e){}
   const fcache={};
   const fstyle=fn=>{if(fn in fcache)return fcache[fn];let nm='';try{if(page.commonObjs.has(fn))nm=page.commonObjs.get(fn).name||''}catch(e){}
@@ -1321,19 +1406,18 @@ const PDF_FONT_URLS={      // real TrueType files (a PDF cannot embed web-font f
   la4:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf',
   la7:'https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/full/ttf/NotoSans-Bold.ttf'
 };
-let PDF_FONT_BYTES=null;
-async function loadPdfFonts(){
-  if(PDF_FONT_BYTES)return PDF_FONT_BYTES;
-  const entries=await Promise.all(Object.entries(PDF_FONT_URLS).map(async([k,u])=>{
-    const r=await fetch(u);if(!r.ok)throw new Error('font '+k+' '+r.status);
-    return [k,new Uint8Array(await r.arrayBuffer())];
+const PDF_FONT_CACHE={};
+async function loadPdfFonts(keys=Object.keys(PDF_FONT_URLS)){      // downloads only the fonts asked for, once
+  await Promise.all(keys.filter(k=>!PDF_FONT_CACHE[k]).map(async k=>{
+    const r=await fetch(PDF_FONT_URLS[k]);if(!r.ok)throw new Error('font '+k+' '+r.status);
+    PDF_FONT_CACHE[k]=new Uint8Array(await r.arrayBuffer());
   }));
-  return PDF_FONT_BYTES=Object.fromEntries(entries);
+  return Object.fromEntries(keys.map(k=>[k,PDF_FONT_CACHE[k]]));
 }
 
 async function pdfVector(model){
   if(typeof fontkit==='undefined'||typeof PDFLib==='undefined')throw new Error('PDF libraries missing');
-  const {PDFDocument,rgb}=PDFLib;
+  const {PDFDocument,rgb,PDFOperator,PDFOperatorNames,PDFName,PDFHexString}=PDFLib;
   const fb=await loadPdfFonts();
   const doc=await PDFDocument.create();doc.registerFontkit(fontkit);
   const F={},cov={};
@@ -1374,7 +1458,7 @@ async function pdfVector(model){
     const items=words.map(w=>{
       let dir=dirOfWord(w);if(dir==='N')dir=prevDir;else prevDir=dir;
       const runs=runsOf(w,bold,(rtlBase&&dir!=='L')||dir==='R');
-      return {dir,runs,w:wordWidth(runs,size)};
+      return {dir,runs,w:wordWidth(runs,size),text:w};
     });
     const lines=[];let cur=[],cw=0;
     for(const it of items){
@@ -1396,14 +1480,20 @@ async function pdfVector(model){
     const vis=visualWords(line,rtlBase);
     const total=vis.reduce((w,it)=>w+it.w,0)+spaceW*(vis.length-1);
     let x=rtlBase?x1-total:x0;
-    for(const it of vis){
+    const at=new Map();
+    for(const it of vis){at.set(it,x);x+=it.w+spaceW}                    // where every word sits on the line (left → right)
+    // The words are written in READING order, and each one is tagged with its real letters (ActualText):
+    // shaped Arabic / Kurdish glyphs cannot be mapped back to letters one by one, so this is what makes copy, search and re-reading correct.
+    line.forEach((it,i)=>{
+      let px=at.get(it);
       const runs=it.dir==='R'?it.runs.slice().reverse():it.runs;
+      page.pushOperators(PDFOperator.of(PDFOperatorNames.BeginMarkedContentSequence,[PDFName.of('Span'),doc.context.obj({ActualText:PDFHexString.fromText(it.text+(i<line.length-1?' ':''))})]));
       for(const r of runs){
-        page.drawText(r.t,{x,y:baselineY,size,font:F[r.k],color:ink});
-        x+=F[r.k].widthOfTextAtSize(r.t,size);
+        page.drawText(r.t,{x:px,y:baselineY,size,font:F[r.k],color:ink});
+        px+=F[r.k].widthOfTextAtSize(r.t,size);
       }
-      x+=spaceW;
-    }
+      page.pushOperators(PDFOperator.of(PDFOperatorNames.EndMarkedContent));
+    });
   }
   const paragraph=(text,size,bold,after)=>{
     for(const part of String(text).split(/\r?\n/)){
@@ -1748,14 +1838,14 @@ writers.pptx=async model=>{
   pres.defineSlideMaster({title:'COVER',background:{data:coverBg}});
   pres.defineSlideMaster({title:'CONTENT',background:{data:contentBg},
     objects:[{rect:{x:0,y:0,w:.18,h:5.625,fill:{color:C.acc}}},{rect:{x:.18,y:5.55,w:9.82,h:.075,fill:{color:C.cyan}}}],
-    slideNumber:{x:9.0,y:5.2,w:.7,h:.3,fontFace:F,fontSize:10,color:'94A3B8',align:'right'}});
+    ...(model.exact===false?{slideNumber:{x:9.0,y:5.2,w:.7,h:.3,fontFace:F,fontSize:10,color:'94A3B8',align:'right'}}:{})});   // no slide numbers when the slide count must match the source
 
   // a styled slide; the title is only the source's own first heading (if there is one)
   const slide=title=>{
     const s=pres.addSlide({masterName:'CONTENT'});
     s.addShape(pres.ShapeType.ellipse,{x:8.0,y:-1.4,w:3.6,h:3.6,fill:{color:C.acc,transparency:90},line:noLine});
     s.addShape(pres.ShapeType.ellipse,{x:-1.2,y:4.3,w:2.8,h:2.8,fill:{color:C.cyan,transparency:92},line:noLine});
-    s.addText(docTitle,{x:X,y:5.2,w:6,h:.3,fontFace:F,fontSize:10,color:'94A3B8',fit:'shrink'});
+    if(model.exact===false)s.addText(docTitle,{x:X,y:5.2,w:6,h:.3,fontFace:F,fontSize:10,color:'94A3B8',fit:'shrink'});   // never add the file name to slides that mirror a source
     let y=.5;
     if(title){
       s.addText(title,{x:X,y:.35,w:W,h:.8,fontFace:F,fontSize:title.length>60?22:title.length>40?26:30,bold:true,color:C.ink,valign:'middle',fit:'shrink'});
