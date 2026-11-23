@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
 <title>CONVERTER</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--line:#2a2f3a;--text:#eef1f6;--mute:#8d96a7;--acc:#2b7cff;--ok:#2fbf71;--err:#ff5d5d;--warn:#e6a23c}
@@ -177,7 +180,8 @@ html[data-design="aurora"] #tabs button.on{background:linear-gradient(135deg,#7c
   html[data-design] #tabs button.on{background:rgba(124,58,237,.32);color:#fff;box-shadow:none}
   body{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px))}
 }
-html[dir="rtl"] body{font-family:system-ui,'Segoe UI',Tahoma,Arial,sans-serif}
+html[dir="rtl"] body,html[dir="rtl"] button,html[dir="rtl"] select,.ocrbox textarea{font-family:'Noto Sans Arabic','Segoe UI',Tahoma,system-ui,Arial,sans-serif}
+html[dir="rtl"] body{line-height:1.7}
 html[dir="rtl"] .label{letter-spacing:0}
 
 /* design switch */
@@ -279,6 +283,7 @@ html[data-design="aurora"] .switch button.on{background:linear-gradient(135deg,#
 <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptx-preview@1.0.5/dist/pptx-preview.umd.js"></script>
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -510,7 +515,7 @@ const I18N={
   '1 · Choose what to do':'١ · اختر ما تريد فعله','2 · Add files':'٢ · أضف الملفات',
   'PDF, Word, Excel, PowerPoint, Text, HTML, CSV and images, convert between them, merge and split PDFs. Everything runs in your browser, your files are never uploaded.':'PDF وWord وExcel وPowerPoint ونص وHTML وCSV وصور: حوّل بينها، وادمج ملفات PDF أو قسّمها. كل شيء يعمل داخل متصفحك ولا يتم رفع ملفاتك أبداً.',
   'Word':'وورد','Excel':'إكسل','PowerPoint':'باوربوينت','Text':'نص',
-  'Photo → PDF':'صورة → PDF','Photo → Word':'صورة → وورد','Photo → Slides':'صورة → شرائح',
+  'Photo → PDF':'صورة إلى PDF','Photo → Word':'صورة إلى وورد','Photo → Slides':'صورة إلى شرائح',
   'Shrink photo':'تصغير الصورة','Merge PDF':'دمج PDF','Split PDF':'تقسيم PDF','Compress PDF':'ضغط PDF','Rotate PDF':'تدوير PDF',
   'Read text (OCR)':'قراءة النص (OCR)',
   'PDF / photo':'PDF / صورة','smaller file':'ملف أصغر','turn 90°':'تدوير 90°','smaller size':'حجم أصغر',
@@ -528,45 +533,47 @@ const I18N={
  },
  ku:{
   '↻ Refresh':'↻ نوێکردنەوە','Documents':'بەڵگەنامەکان','Photos':'وێنەکان','PDF tools':'ئامرازەکانی PDF','Read text':'خوێندنەوەی دەق',
-  '1 · Choose what to do':'١ · هەڵبژێرە چی بکەیت','2 · Add files':'٢ · فایلەکان زیاد بکە',
-  'PDF, Word, Excel, PowerPoint, Text, HTML, CSV and images, convert between them, merge and split PDFs. Everything runs in your browser, your files are never uploaded.':'PDF، Word، Excel، PowerPoint، دەق، HTML، CSV و وێنە: بیانگۆڕە بۆ یەکتر، PDF تێکەڵ بکە یان دابەشی بکە. هەموو شتێک لە ناو وێبگەڕەکەتدا کار دەکات و فایلەکانت هەرگیز نانێردرێن.',
+  '1 · Choose what to do':'١ · هەڵبژێرە دەتەوێت چی بکەیت','2 · Add files':'٢ · فایلەکان زیاد بکە',
+  'PDF, Word, Excel, PowerPoint, Text, HTML, CSV and images, convert between them, merge and split PDFs. Everything runs in your browser, your files are never uploaded.':'PDF، Word، Excel، PowerPoint، دەق، HTML، CSV و وێنە: بیانگۆڕە بۆ یەکتر، PDFـەکان تێکەڵ بکە یان دابەشیان بکە. هەموو شتێک لەناو وێبگەڕەکەتدا ئەنجام دەدرێت و فایلەکانت هەرگیز نانێردرێن.',
   'Word':'وۆرد','Excel':'ئێکسڵ','PowerPoint':'پاوەرپۆینت','Text':'دەق',
-  'Photo → PDF':'وێنە → PDF','Photo → Word':'وێنە → وۆرد','Photo → Slides':'وێنە → سلایدەکان',
-  'Shrink photo':'پچووککردنەوەی وێنە','Merge PDF':'تێکەڵکردنی PDF','Split PDF':'دابەشکردنی PDF','Compress PDF':'پچووککردنەوەی PDF','Rotate PDF':'سوڕاندنی PDF',
+  'Photo → PDF':'وێنە بۆ PDF','Photo → Word':'وێنە بۆ وۆرد','Photo → Slides':'وێنە بۆ سلاید',
+  'Shrink photo':'کەمکردنەوەی قەبارەی وێنە','Merge PDF':'تێکەڵکردنی PDF','Split PDF':'دابەشکردنی PDF','Compress PDF':'کەمکردنەوەی قەبارەی PDF','Rotate PDF':'سوڕاندنی PDF',
   'Read text (OCR)':'خوێندنەوەی دەق (OCR)',
-  'PDF / photo':'PDF / وێنە','smaller file':'فایلی بچووکتر','turn 90°':'سوڕاندن ٩٠°','smaller size':'قەبارەی بچووکتر',
-  'pictures to PDF':'وێنە بۆ PDF','pictures to .docx':'وێنە بۆ docx','pictures to .pptx':'وێنە بۆ pptx',
+  'PDF / photo':'PDF / وێنە','smaller file':'فایلی بچووکتر','turn 90°':'سوڕاندن ٩٠°','smaller size':'قەبارەی کەمتر',
+  'pictures to PDF':'وێنەکان بۆ PDF','pictures to .docx':'وێنەکان بۆ docx','pictures to .pptx':'وێنەکان بۆ pptx',
   'many → one':'چەند فایل بۆ یەک','page by page':'لاپەڕە بە لاپەڕە','Arabic · English':'عەرەبی · ئینگلیزی',
   'Drop files here':'فایلەکان لێرە دابنێ',
-  'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG، دەتوانیت چەند فایلێک پێکەوە دابنێیت. وێنەکان: PDF یان PowerPoint یان Word هەڵبژێرە و چەند وێنەیەک دەبنە یەک فایل.',
-  'Clear':'پاککردنەوە','Selected:':'هەڵبژێردراو:','ℹ Arabic and Kurdish text is saved as page pictures so it looks exactly the same (the text can’t be selected).':'ℹ دەقی عەرەبی و کوردی وەک وێنەی لاپەڕەکان پاشەکەوت دەکرێت تا هەروەک خۆی دەربکەوێت (دەقەکە هەڵنابژێردرێت).',
+  'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG — دەتوانیت چەند فایلێک پێکەوە دابنێیت. بۆ وێنەکان: PDF یان PowerPoint یان Word هەڵبژێرە، چەند وێنەیەک دەبنە یەک فایل.',
+  'Clear':'پاککردنەوە','Selected:':'هەڵبژێردراو:',
   'Language in the picture:':'زمانی ناو وێنەکە:',
-  'Auto (Arabic or English)':'خۆکار (عەرەبی یان ئینگلیزی)','Arabic only':'تەنها عەرەبی','Arabic + English mixed in one picture':'عەرەبی + ئینگلیزی تێکەڵ لە یەک وێنەدا','English only':'تەنها ئینگلیزی',
+  'Auto (Arabic or English)':'خۆکار (عەرەبی یان ئینگلیزی)','Arabic only':'تەنها عەرەبی','Arabic + English mixed in one picture':'عەرەبی و ئینگلیزی تێکەڵ لە یەک وێنەدا','English only':'تەنها ئینگلیزی',
   'Kurdish Sorani (Arabic script, کوردی)':'کوردی سۆرانی (بە پیتی عەرەبی)','Kurdish Badini (Arabic script, بادینی)':'کوردی بادینی (بە پیتی عەرەبی)','Kurdish Kurmanji (Latin script) + English':'کوردی کرمانجی (بە پیتی لاتینی) + ئینگلیزی',
   'Download':'داگرتن','Open':'کردنەوە','Share':'هاوبەشکردن','Download Word':'داگرتنی Word','Download .txt':'داگرتنی txt','Copy':'کۆپی','Copied ✓':'کۆپی کرا ✓',
-  'Reading…':'خوێندنەوە…','Failed: ':'شکستی هێنا: ',
-  'Text found ({n} characters). Fix anything below, then export.':'دەق دۆزرایەوە ({n} پیت). هەرچییەک هەڵەیە لە خوارەوە ڕاستی بکەرەوە، پاشان هەناردەی بکە.'
+  'Reading…':'خوێندنەوە…','Failed: ':'سەرنەکەوت: ',
+  'Text found ({n} characters). Fix anything below, then export.':'دەق دۆزرایەوە ({n} پیت). ئەگەر هەڵەی تێدایە لە خوارەوە ڕاستی بکەرەوە، پاشان هەناردەی بکە.',
+  'ℹ Arabic and Kurdish text is saved as page pictures so it looks exactly the same (the text can’t be selected).':'ℹ دەقی عەرەبی و کوردی وەک وێنەی لاپەڕەکان پاشەکەوت دەکرێت تا هەروەک خۆی دەربکەوێت (دەقەکە هەڵنابژێردرێت).'
  },
  bd:{
   '↻ Refresh':'↻ نویکرن','Documents':'بەلگەنامە','Photos':'وێنە','PDF tools':'ئامرازێن PDF','Read text':'خواندنا تێکستێ',
   '1 · Choose what to do':'١ · هەلبژێرە تو دڤێت چ بکەی','2 · Add files':'٢ · فایلان زێدە بکە',
   'PDF, Word, Excel, PowerPoint, Text, HTML, CSV and images, convert between them, merge and split PDFs. Everything runs in your browser, your files are never uploaded.':'PDF، Word، Excel، PowerPoint، تێکست، HTML، CSV و وێنە: ل ناڤبەرا وان بگوهۆڕە، PDF تێکەل بکە یان دابەش بکە. هەمی تشت د ناڤ وێبگەڕا تەدا کار دکەت و فایلێن تە چ جاران ناهێنە ڤەگوهاستن.',
   'Word':'وۆرد','Excel':'ئێکسل','PowerPoint':'پاوەرپۆینت','Text':'تێکست',
-  'Photo → PDF':'وێنە → PDF','Photo → Word':'وێنە → وۆرد','Photo → Slides':'وێنە → سلایدان',
-  'Shrink photo':'بچویککرنا وێنەی','Merge PDF':'تێکەلکرنا PDF','Split PDF':'دابەشکرنا PDF','Compress PDF':'بچویککرنا PDF','Rotate PDF':'زڤراندنا PDF',
+  'Photo → PDF':'وێنە بۆ PDF','Photo → Word':'وێنە بۆ وۆرد','Photo → Slides':'وێنە بۆ سلایدان',
+  'Shrink photo':'کێمکرنا قەبارێ وێنەی','Merge PDF':'تێکەلکرنا PDF','Split PDF':'دابەشکرنا PDF','Compress PDF':'کێمکرنا قەبارێ PDF','Rotate PDF':'زڤراندنا PDF',
   'Read text (OCR)':'خواندنا تێکستێ (OCR)',
-  'PDF / photo':'PDF / وێنە','smaller file':'فایلێ بچویکتر','turn 90°':'زڤراندن ٩٠°','smaller size':'قەبارەیێ بچویکتر',
+  'PDF / photo':'PDF / وێنە','smaller file':'فایلێ بچویکتر','turn 90°':'زڤراندن ٩٠°','smaller size':'قەبارەیێ کێمتر',
   'pictures to PDF':'وێنە بۆ PDF','pictures to .docx':'وێنە بۆ docx','pictures to .pptx':'وێنە بۆ pptx',
   'many → one':'گەلەک فایل بۆ ئێک','page by page':'پەرە ب پەرە','Arabic · English':'عەرەبی · ئینگلیزی',
   'Drop files here':'فایلان ل ڤێرە دانە',
-  'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG، تو دشێی گەلەک فایلان ب ئێکەڤە دانی. وێنە: PDF یان PowerPoint یان Word هەلبژێرە و گەلەک وێنە دبنە ئێک فایل.',
-  'Clear':'پاقژکرن','Selected:':'یێ هەلبژارتی:','ℹ Arabic and Kurdish text is saved as page pictures so it looks exactly the same (the text can’t be selected).':'ℹ تێکستا عەرەبی و کوردی وەک وێنەیێن پەرەیان دهێتە پاراستن دا وەک خۆ دیار ببیت (تێکست ناهێتە هەلبژارتن).',
+  'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG, several at once is fine. Photos: choose PDF, PowerPoint or Word, several photos become one file.':'PDF · Word · Excel · PowerPoint · TXT · HTML · CSV · JPG/PNG — تو دشێی گەلەک فایلان ب ئێکەڤە دانی. بۆ وێنەیان: PDF یان PowerPoint یان Word هەلبژێرە، گەلەک وێنە دبنە ئێک فایل.',
+  'Clear':'پاقژکرن','Selected:':'یێ هەلبژارتی:',
   'Language in the picture:':'زمانێ د ناڤ وێنەی دا:',
-  'Auto (Arabic or English)':'خۆکار (عەرەبی یان ئینگلیزی)','Arabic only':'تنێ عەرەبی','Arabic + English mixed in one picture':'عەرەبی + ئینگلیزی تێکەل د ئێک وێنەدا','English only':'تنێ ئینگلیزی',
+  'Auto (Arabic or English)':'خۆکار (عەرەبی یان ئینگلیزی)','Arabic only':'تنێ عەرەبی','Arabic + English mixed in one picture':'عەرەبی و ئینگلیزی تێکەل د ئێک وێنەدا','English only':'تنێ ئینگلیزی',
   'Kurdish Sorani (Arabic script, کوردی)':'کوردی سۆرانی (ب پیتێن عەرەبی)','Kurdish Badini (Arabic script, بادینی)':'کوردی بادینی (ب پیتێن عەرەبی)','Kurdish Kurmanji (Latin script) + English':'کوردی کرمانجی (ب پیتێن لاتینی) + ئینگلیزی',
   'Download':'دابەزاندن','Open':'ڤەکرن','Share':'پارڤەکرن','Download Word':'دابەزاندنا Word','Download .txt':'دابەزاندنا txt','Copy':'کۆپی','Copied ✓':'کۆپی بوو ✓',
   'Reading…':'خواندن…','Failed: ':'سەرنەکەفت: ',
-  'Text found ({n} characters). Fix anything below, then export.':'تێکست هاتە دیتن ({n} پیت). هەر تشتەکێ خەلەت ل خوارێ ڕاست بکە، پاشی ڤەگوهێزە.'
+  'Text found ({n} characters). Fix anything below, then export.':'تێکست هاتە دیتن ({n} پیت). هەر تشتەکێ خەلەت ل خوارێ ڕاست بکە، پاشی ڤەگوهێزە.',
+  'ℹ Arabic and Kurdish text is saved as page pictures so it looks exactly the same (the text can’t be selected).':'ℹ تێکستا عەرەبی و کوردی وەک وێنەیێن پەرەیان دهێتە پاراستن دا وەک خۆ دیار ببیت (تێکست ناهێتە هەلبژارتن).'
  }
 };
 let LANG='en';
@@ -611,7 +618,18 @@ function ocrPrep(src){
   x.drawImage(src,0,0,c.width,c.height);return c;
 }
 // The Arabic reader writes Arabic letter forms; Sorani uses its own: ی ک ۆ and ە (at the end of words)
-const soraniFix=t=>t.replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/ؤ/g,'ۆ').replace(/[هة](?![؀-ۿ])/g,'ە');
+const soraniFix=t=>{
+  const AR='\u0600-\u06FF', C='بتثجحخدذرزسشصضطظعغفقکلمنپچگژڕڤ';
+  // letter forms: the Arabic reader writes Arabic letters, Kurdish uses ی ک ۆ ە
+  t=t.replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/ؤ/g,'ۆ').replace(/ة/g,'ە');
+  // ە: the reader writes ه. Start of a word (له به ده که ئه هه نه…), between two consonants, and at the end of a word
+  t=t.replace(new RegExp('(^|[^'+AR+'])([لبدوکئهنستمپچگفژ])ه(?=['+AR+'])','g'),'$1$2ە');
+  t=t.replace(new RegExp('(['+C+'])ه(?=['+C+'])','g'),'$1ە');
+  t=t.replace(new RegExp('ه(?![\u0600-\u06FF])','g'),'ە');
+  // Kurdish words never start with the soft r: it is always ڕ
+  t=t.replace(new RegExp('(^|[^'+AR+'])ر(?=['+AR+'])','g'),'$1ڕ');
+  return t;
+};
 
 // read as one block of text first (best for most photos); if unsure, also try automatic layout and keep the more confident result
 async function ocrRead(w,canvas){
@@ -798,6 +816,16 @@ async function convert(file,li,to){
   if(!from)throw new Error('Unsupported file type');
   if(file.size>150*1024*1024)throw new Error('This file is bigger than 150 MB, too large for a browser. Split it first');
   if(from===to)throw new Error(`Already a ${NAMES[to]} file, pick a different target`);
+  if(to==='pdf'&&['docx','html','xlsx','pptx'].includes(from)){
+    try{
+      const blob=await faithfulPdf(file,from,prog);
+      return finish(li,blob,baseName(file)+'.pdf',NAMES[from]+' → PDF (same design)');
+    }catch(err){console.warn('Same-design PDF failed, using the simple layout:',err);prog(.05,'Using the simple layout…')}
+  }
+  if(from==='pptx'&&to==='pdf'){
+    const r=await pptxToPdf(file,prog);
+    if(r)return finish(li,r.blob,baseName(file)+'.pdf',`${NAMES.pptx} → ${NAMES.pdf} (${r.slides} slides, same design)`);
+  }
   if(to==='ocr'){
     if(from!=='img'&&from!=='pdf')throw new Error('Read text (OCR) works on photos and scanned PDFs');
     return ocrFile(file,li,from);
@@ -825,6 +853,119 @@ async function convert(file,li,to){
   const blob=await writers[to](model);
   const name=file.name.replace(/\.[^.]+$/,'')+'.'+to;
   finish(li,blob,name,`${NAMES[from]} → ${NAMES[to]}`,to==='pdf'&&hasNonLatin(model));
+}
+
+/* ============ Same design → PDF ============
+   Word, HTML, Excel and PowerPoint files are drawn by the browser exactly as they look, then each page is saved into the PDF as a picture.
+   Design and text stay the same (the text in these PDFs can't be selected). */
+const FPDF={A4W:595.28,A4H:841.89,PW:794,PH:1123};
+function fpFrame(scripts,html,sandbox){
+  return new Promise((res,rej)=>{
+    const f=document.createElement('iframe');
+    f.style.cssText='position:fixed;left:-20000px;top:0;width:'+FPDF.PW+'px;height:'+FPDF.PH+'px;border:0;background:#fff';
+    if(sandbox!==undefined)f.setAttribute('sandbox',sandbox);
+    f.srcdoc=html!=null?html:'<!doctype html><html><body style="margin:0;background:#fff">'+scripts.map(s=>'<scr'+'ipt src="'+s+'"></scr'+'ipt>').join('')+'</body></html>';
+    const t=setTimeout(()=>{f.remove();rej(new Error('The page renderer did not load. Check your internet connection'))},30000);
+    f.onload=()=>{clearTimeout(t);res(f)};
+    document.body.appendChild(f);
+  });
+}
+const fpBuf=(w,buf)=>{const ab=new w.ArrayBuffer(buf.byteLength);new w.Uint8Array(ab).set(new Uint8Array(buf));return ab};
+const fpWait=ms=>new Promise(r=>setTimeout(r,ms));
+async function fpImages(doc){await Promise.all([...doc.images].map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r})))}
+
+// builds the PDF one picture-page at a time; every page can have its own size
+function fpPdf(){
+  let d=null;
+  return {
+    add(canvas,wpt,hpt){
+      const o=wpt>hpt?'l':'p';
+      if(!d)d=new jspdf.jsPDF({unit:'pt',format:[wpt,hpt],orientation:o});else d.addPage([wpt,hpt],o);
+      d.addImage(canvas.toDataURL('image/jpeg',.92),'JPEG',0,0,wpt,hpt);
+    },
+    get count(){return d?d.getNumberOfPages():0},
+    blob(){return d.output('blob')}
+  };
+}
+
+// a normal page of flowing content (HTML, spreadsheet sheets): cut into A4 pages
+async function fpFlow(f,out,prog,base,span){
+  const doc=f.contentDocument,PW=FPDF.PW,PH=FPDF.PH;
+  await fpImages(doc);await fpWait(150);
+  const total=Math.max(doc.documentElement.scrollHeight,doc.body?doc.body.scrollHeight:0,PH);
+  const n=Math.ceil(total/PH);
+  for(let k=0;k<n;k++){
+    const h=Math.min(PH,total-k*PH);
+    const c=await html2canvas(doc.documentElement,{scale:2,backgroundColor:'#ffffff',logging:false,windowWidth:PW,width:PW,x:0,y:k*PH,height:h,scrollX:0,scrollY:0});
+    out.add(c,FPDF.A4W,c.height/c.width*FPDF.A4W);
+    prog(base+span*(k+1)/n,'Page '+(k+1)+' of '+n+'…');
+    await fpWait(0);
+  }
+}
+
+async function fpDocx(file,out,prog){
+  const f=await fpFrame(['https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js','https://cdn.jsdelivr.net/npm/docx-preview@0.3.3/dist/docx-preview.min.js']);
+  try{
+    const w=f.contentWindow,doc=f.contentDocument,root=doc.createElement('div');doc.body.appendChild(root);
+    prog(.15,'Drawing the document…');
+    await w.docx.renderAsync(fpBuf(w,await file.arrayBuffer()),root,null,{inWrapper:false,breakPages:true,ignoreLastRenderedPageBreak:false});
+    await fpWait(300);await fpImages(doc);
+    const pages=[...root.querySelectorAll('section.docx')];
+    if(!pages.length)throw new Error('No pages found');
+    for(let k=0;k<pages.length;k++){
+      const el=pages[k],c=await html2canvas(el,{scale:2,backgroundColor:'#ffffff',logging:false});
+      out.add(c,el.offsetWidth*.75,el.offsetHeight*.75);
+      prog(.2+.7*(k+1)/pages.length,'Page '+(k+1)+' of '+pages.length+'…');
+      await fpWait(0);
+    }
+  }finally{f.remove()}
+}
+
+async function fpHtml(file,out,prog){
+  const f=await fpFrame(null,await file.text(),'allow-same-origin');     // scripts in the file never run
+  try{await fpFlow(f,out,prog,.15,.75)}finally{f.remove()}
+}
+
+async function fpXlsx(file,out,prog){
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  const css='body{margin:0;padding:28px;background:#fff;color:#111827;font:12px/1.45 Calibri,Arial,sans-serif}table{border-collapse:collapse;width:100%}td,th{border:1px solid #cbd5e1;padding:5px 9px;vertical-align:top}tr:first-child td{background:#4C1D95;color:#fff;font-weight:700}tr:nth-child(even) td{background:#F3F0FF}';
+  let done=0;
+  for(const name of wb.SheetNames){
+    const ws=wb.Sheets[name];
+    if(!ws||!ws['!ref'])continue;
+    const body=XLSX.utils.sheet_to_html(ws,{header:'',footer:''});
+    const f=await fpFrame(null,'<!doctype html><meta charset="utf-8"><style>'+css+'</style>'+body,'allow-same-origin');
+    try{await fpFlow(f,out,prog,.1+.8*done/wb.SheetNames.length,.8/wb.SheetNames.length)}finally{f.remove()}
+    done++;
+  }
+}
+
+async function fpPptx(file,out,prog){
+  const f=await fpFrame(['https://cdn.jsdelivr.net/npm/pptx-preview@1.0.5/dist/pptx-preview.umd.js']);
+  try{
+    const w=f.contentWindow,doc=f.contentDocument,root=doc.createElement('div');doc.body.appendChild(root);
+    prog(.15,'Drawing the slides…');
+    const pv=w.pptxPreview.init(root,{width:960,height:540});
+    const info=await pv.preview(fpBuf(w,await file.arrayBuffer()));
+    const n=info&&info.slides?info.slides.length:0;
+    if(!n)throw new Error('No slides could be drawn');
+    for(let k=0;k<n;k++){
+      await fpWait(350);await fpImages(doc);
+      const wr=root.querySelector('.pptx-preview-wrapper');
+      if(!wr||!wr.children.length)throw new Error('Slide '+(k+1)+' could not be drawn');
+      const c=await html2canvas(wr,{scale:2,backgroundColor:'#ffffff',logging:false});
+      out.add(c,720,405);
+      prog(.2+.7*(k+1)/n,'Slide '+(k+1)+' of '+n+'…');
+      if(k<n-1)pv.renderNextSlide();
+    }
+  }finally{f.remove()}
+}
+
+async function faithfulPdf(file,from,prog){
+  const out=fpPdf();
+  await ({docx:fpDocx,html:fpHtml,xlsx:fpXlsx,pptx:fpPptx})[from](file,out,prog);
+  if(!out.count)throw new Error('Nothing to draw');
+  return out.blob();
 }
 
 /* ============ Common model ============
@@ -1064,11 +1205,41 @@ writers.docx=async model=>{
   return Packer.toBlob(new Document({styles:{default:{document:{run:{font,size:22,color:T.body}}}},sections:[{headers:{default:rule},footers:{default:num},children:ch}]}));
 };
 // ---- PDF
+// PowerPoint → PDF with the real look: the slides are drawn by the browser exactly as designed, then each slide becomes a PDF page
+async function pptxToPdf(file,prog){
+  if(typeof pptxPreview==='undefined')return null;
+  const W=960,H=540,SC=2,PWpt=W*.75,PHpt=H*.75;
+  const host=document.createElement('div');
+  host.style.cssText=`position:fixed;left:-20000px;top:0;width:${W}px;background:#fff`;document.body.appendChild(host);
+  try{
+    prog(.1,'Drawing the slides…');
+    const previewer=pptxPreview.init(host,{width:W,height:H,mode:'list'});
+    await previewer.preview(await file.arrayBuffer());
+    try{await document.fonts.ready}catch(e){}
+    await new Promise(r=>setTimeout(r,400));
+    const slides=[...host.querySelectorAll('.pptx-preview-slide-wrapper')];
+    if(!slides.length)return null;                                   // could not draw this deck: caller uses the text route
+    const d=new jspdf.jsPDF({orientation:'landscape',unit:'pt',format:[PWpt,PHpt]});
+    for(let i=0;i<slides.length;i++){
+      prog(.15+.8*i/slides.length,`Slide ${i+1} of ${slides.length}…`);
+      const c=await html2canvas(slides[i],{scale:SC,backgroundColor:'#ffffff',useCORS:true,logging:false});
+      if(i)d.addPage([PWpt,PHpt],'landscape');
+      d.addImage(c.toDataURL('image/jpeg',.93),'JPEG',0,0,PWpt,PHpt);
+    }
+    return {blob:d.output('blob'),slides:slides.length};
+  }catch(err){console.warn('PowerPoint preview failed',err);return null}
+  finally{host.remove()}
+}
+
 // Arabic, Kurdish and other scripts: the browser draws the text (right letters, right-to-left), then each page is saved as a picture
 async function pdfAsPictures(model){
   const PW=794,PH=1123,M=48,CW=PW-2*M,MAXH=PH-2*M,SC=2;
   const e=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const FONT="font-family:'Segoe UI',Tahoma,'Noto Naskh Arabic',Arial,sans-serif;color:#111;";
+  const FONT="font-family:'Noto Sans Arabic','Segoe UI',Tahoma,Arial,sans-serif;color:#111;";
+  try{                                                                      // make sure the Kurdish-capable font is ready before drawing
+    await Promise.all([document.fonts.load('400 15px "Noto Sans Arabic"','العربية سڵاو ڕێ ڤ ۆ ە'),document.fonts.load('700 22px "Noto Sans Arabic"','العربية سڵاو')]);
+    await document.fonts.ready;
+  }catch(e){}
   const blockHtml=b=>{
     if(b.t==='h')return `<div style="padding-bottom:12px"><div dir="auto" style="${FONT}font-weight:700;font-size:${[0,28,22,18][b.l]}px;line-height:1.35">${e(b.x)}</div></div>`;
     if(b.t==='p')return `<div style="padding-bottom:10px"><div dir="auto" style="${FONT}font-size:15px;line-height:1.75;white-space:pre-wrap">${e(b.x)}</div></div>`;
